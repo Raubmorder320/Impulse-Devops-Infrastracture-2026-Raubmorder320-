@@ -1,0 +1,72 @@
+---
+- name: "Раздел 3: Автоматизация инфраструктуры и запуск сервиса"
+  hosts: server
+  become: yes
+
+  tasks:
+    # --- 1. Установка Docker и окружения ---
+    - name: "Установка системных зависимостей"
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - python3-pip
+        state: present
+        update_cache: yes
+
+    - name: "Установка Docker.io"
+      apt:
+        name: docker.io
+        state: present
+
+    - name: "Настройка службы Docker"
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: "Добавление пользователя в группу docker"
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: "Проверка успешности установки Docker"
+      command: docker --version
+      register: docker_ver
+
+    - name: "Вывод установленной версии Docker"
+      debug:
+        var: docker_ver.stdout
+
+    # --- 2. Подготовка и сборка проекта ---
+    - name: "Создание директории проекта"
+      file:
+        path: /app/infrastructure_project
+        state: directory
+        mode: '0755'
+
+    - name: "Синхронизация исходного кода (Раздел 2) на сервер"
+      copy:
+        src: ../task2
+        dest: /app/infrastructure_project/
+
+    - name: "Сборка Docker-образа"
+      shell: "docker build -t infrastructure-task ./task2"
+      args:
+        chdir: /app/infrastructure_project
+
+    # --- 3. Запуск и верификация ---
+    - name: "Запуск контейнера и выполнение скрипта"
+      shell: "docker run --name infra-check-container infrastructure-task"
+      register: container_output
+
+    - name: "Автоматическая проверка: Вывод docker logs через Ansible"
+      debug:
+        msg: "{{ container_output.stderr_lines }}"
+
+    - name: "Очистка временного контейнера"
+      shell: "docker rm infra-check-container"
+      ignore_errors: yes
